@@ -1,4 +1,4 @@
-namespace AcmeCli
+namespace Common.KeyVault
 {
     public class KeyVaultSettings
     {
