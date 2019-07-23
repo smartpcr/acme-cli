@@ -1,9 +1,15 @@
-﻿using System.Threading;
+﻿using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Certes;
+using Certes.Acme;
 using Common.KeyVault;
 using Common.Metrics;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal;
 using Microsoft.Azure.KeyVault;
+using Microsoft.Azure.Management.AppService.Fluent;
+using Microsoft.Azure.Management.Dns.Fluent;
+using Microsoft.Azure.Management.ResourceManager.Fluent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -70,9 +76,37 @@ namespace AcmeCli
 
                         services.AddAppInsights();
                     }
+
+                    RunAcmeRequestHandlerJob(hostBuilderContext, services, args)
+                        .GetAwaiter().GetResult();
                 });
 
             await builder.RunConsoleAsync();
+        }
+
+        private static async Task RunAcmeRequestHandlerJob(
+            HostBuilderContext hostBuilderContext,
+            IServiceCollection services,
+            string[] args)
+        {
+            services.AddTransient<IAcmeContext, AcmeContext>();
+            services.AddTransient<IDnsManagementClient, DnsManagementClient>();
+            services.AddTransient<IResourceManagementClient, ResourceManagementClient>();
+            services.AddTransient<IWebSiteManagementClient, WebSiteManagementClient>();
+
+            var acme = new AcmeContext(WellKnownServers.LetsEncryptV2);
+            var account = await acme.NewAccount("lingxd@gmail.com", true);
+            var pemKey = acme.AccountKey.ToPem();
+
+            var order = await acme.NewOrder(new[] {"*.dev.xiaodong.world"});
+            var authz = (await order.Authorizations()).First();
+            var dnsChallenge = await authz.Dns();
+            var dnsText = acme.AccountKey.DnsTxt(dnsChallenge.Token);
+
+            // TODO: add dns txt record to _acme-challenge.dev.xiaodong.world with dnsText value
+
+            var httpChallenge = await authz.Http();
+            var keyAuthz = httpChallenge.KeyAuthz;
         }
     }
 }
